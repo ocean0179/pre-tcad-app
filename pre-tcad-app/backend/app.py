@@ -48,10 +48,10 @@ except Exception:
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://pre-tcad-app.vercel.app"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["POST"],
+    allow_headers=["Content-Type"],
 )
 
 class ScreenReq(BaseModel):
@@ -142,3 +142,4 @@ def screen(req: ScreenReq):
 
     result["chart"] = make_ranking_chart(result.get("percentiles", {}))
     return result
+
