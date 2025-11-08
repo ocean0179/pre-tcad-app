@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pre-TCAD Material Screener for MOSFET — 입력</title>
+<style>
+  :root{--fg:#111;--muted:#666;--border:#e6e6eb;--bg:#f7f7f8}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:var(--bg);color:var(--fg)}
+  main{max-width:980px;margin:40px auto;padding:0 16px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 1px 8px rgba(0,0,0,.04);margin-bottom:16px}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,50px));gap:55px}
+  label{font-weight:600;font-size:14px}
+  input{width:100%;padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px}
+  button{padding:.7rem 1rem;border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer}
+  .muted{color:var(--muted);font-size:13px}
+  .title{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+  .title h1{margin:0}
+  .disabled{opacity:.6;pointer-events:none}
+  .pill{display:inline-block;padding:.2rem .6rem;border:1px solid var(--border);border-radius:999px;font-size:12px}
+</style>
+</head>
+<body>
+<main>
+  <div class="title">
+    <h1>Pre-TCAD Material Screener for MOSFET</h1>
+    <span class="pill">Input Page</span>
+  </div>
+
+  <!-- CIF 업로드 영역(비활성) -->
+  <div class="card">
+    <h3>CIF 업로드</h3>
+    <p class="muted">현재는 CIF 업로드 기능을 준비 중이에요. 값 직접 입력으로 테스트해주세요.</p>
+    <div class="row disabled">
+      <div><label for="cif">CIF 파일</label><input id="cif" type="file" accept=".cif"></div>
+      <div><label>&nbsp;</label><button disabled>분석(업로드)</button></div>
+    </div>
+  </div>
+
+  <!-- 값 직접 입력 -->
+  <div class="card">
+    <h3>재료/소자 파라미터 입력</h3>
+    <div class="row">
+      <div><label>Eg (eV)</label><input id="Eg_eV" type="number" step="0.01" value="1.12"></div>
+      <div><label>εr</label><input id="eps_r" type="number" step="0.1" value="11.7"></div>
+      <div><label>Ef_atom (eV)</label><input id="Ef_eV_atom" type="number" step="0.1" value="-1.0"></div>
+      <div><label>μ (cm²/V·s)</label><input id="mu_cm2_Vs" type="number" step="1" value="450"></div>
+
+      <div><label>tox (nm)</label><input id="tox_nm" type="number" step="0.1" value="1.2"></div>
+      <div><label>εox</label><input id="eps_ox" type="number" step="0.1" value="3.9"></div>
+      <div><label>NA (cm⁻³)</label><input id="NA_cm3" type="number" step="1" value="100000000000000000"></div>
+      <div><label>L (nm)</label><input id="L_nm" type="number" step="1" value="45"></div>
+      <div><label>W (µm)</label><input id="W_um" type="number" step="0.1" value="1.0"></div>
+
+      <div><label>T (K)</label><input id="T" type="number" step="1" value="300"></div>
+      <div><label>VDD (V)</label><input id="VDD" type="number" step="0.05" value="1.0"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+      <button id="run">분석 실행 → 출력 페이지</button>
+      <span id="status" class="muted"></span>
+      <span class="muted">※ 지금은 서버 호출 없이, 입력값만 저장하고 이동합니다.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>프리셋</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="preset" data-preset="si">Si (일반)</button>
+      <button class="preset" data-preset="si_long">Si (롱채널/고전압)</button>
+      <button class="preset" data-preset="short">단채널/저전압</button>
+    </div>
+    <p class="muted">프리셋을 누르면 입력값이 자동으로 채워집니다.</p>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+function toNum(id){ const v = $(id).value.trim(); return v===""? null : Number(v); }
+function setVals(obj){ for (const [k,v] of Object.entries(obj)) { const el = $(k); if (el) el.value = v; } }
+
+const PRESETS = {
+  si: { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:450, tox_nm:1.2, eps_ox:3.9, NA_cm3:1e17, L_nm:45, W_um:1.0, T:300, VDD:1.0 },
+  si_long: { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:1350, tox_nm:2.0, eps_ox:3.9, NA_cm3:1e16, L_nm:180, W_um:1.0, T:300, VDD:1.8 },
+  short: { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:300, tox_nm:1.0, eps_ox:3.9, NA_cm3:5e17, L_nm:20, W_um:1.0, T:300, VDD:0.7 }
+};
+document.querySelectorAll('.preset').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const p = PRESETS[btn.dataset.preset];
+    setVals(p);
+  });
+});
+
+$('run').onclick = () => {
+  const payload = {
+    props: {
+      Eg_eV: toNum('Eg_eV'),
+      eps_r: toNum('eps_r'),
+      Ef_eV_atom: toNum('Ef_eV_atom'),
+      mu_cm2_Vs: toNum('mu_cm2_Vs'),
+      tox_nm: toNum('tox_nm'),
+      eps_ox: toNum('eps_ox'),
+      NA_cm3: toNum('NA_cm3'),
+      L_nm: toNum('L_nm'),
+      W_um: toNum('W_um')
+    },
+    device: "MOSFET",
+    conditions: { temp: toNum('T'), vdd: toNum('VDD') }
+  };
+
+  // 필수값 간단 검증
+  if (payload.props.Eg_eV == null || payload.props.eps_r == null || payload.props.Ef_eV_atom == null) {
+    $('status').textContent = '필수값(Eg, εr, Ef_atom)을 입력해주세요.';
+    return;
+  }
+
+  // 저장 및 이동
+  localStorage.setItem('screener_input', JSON.stringify(payload));
+  const base = window.location.pathname.replace(/index\.html?$/, '');
+  window.location.href = base + 'result.html';
+};
+</script>
+</body>
+</html>

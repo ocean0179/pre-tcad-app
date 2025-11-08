@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pre-TCAD Screener Results</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #111;
+      --card: #1e1e1e;
+      --text: #eee;
+      --muted: #bbb;
+      --border: #333;
+      --accent1: #5aa5ff;
+      --accent2: #8de1ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    main {
+      display: grid;
+      grid-template-areas:
+        "props process"
+        "metrics percent"
+        "chart chart";
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto auto;
+      gap: 20px;
+      padding: 20px 20px 92px; 
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card);
+      padding: 18px 22px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,.3);
+    }
+    h2 {
+      margin-top: 0;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+      font-size: 18px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+    }
+    td, th {
+      padding: 10px 12px;
+      font-size: 14px;
+      text-align: left;
+    }
+    tr:nth-child(even) { background-color: #2a2a2a; }
+
+    #props-summary { grid-area: props; }
+    #process-slider { grid-area: process; }
+    #metrics-table { grid-area: metrics; }
+    #percentiles-table { grid-area: percent; }
+    #ranking-chart { grid-area: chart; }
+
+    label { display:block; margin:8px 0; }
+    input[type=range] { width: 100%; }
+
+    /* 퍼센트바 */
+    .barwrap {
+      position:relative; height:10px; background:#1a1a1a;
+      border:1px solid #2d2d2d; border-radius:999px;
+      overflow: hidden;
+    }
+    .barfill {
+      position:absolute; inset:0; width:0%;
+      border-radius:999px;
+      background:linear-gradient(90deg,var(--accent1),var(--accent2));
+      transition: width .3s ease;
+    }
+    .bartext { min-width:52px; text-align:right;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+
+    /* 차트 */
+    #ranking-chart { display:flex; flex-direction:column; align-items:center; }
+    #chartImg {
+      max-width: 900px;
+      width: 60%;
+      height: auto;
+      display: block;
+      margin: 12px auto 0;
+      image-rendering: auto;
+      transition: width .2s ease, opacity .2s ease;
+    }
+
+    /* 하단 툴바 */
+    .toolbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: rgba(30,30,30,.98);
+      backdrop-filter: blur(6px);
+      border-top: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      z-index: 10;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid #2b2b2b;
+      background: #202020;
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform .08s ease, background .2s ease, border-color .2s ease;
+    }
+    .btn:hover { background:#262626; border-color:#3a3a3a; }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary {
+      background: linear-gradient(180deg,#2a2a2a,#212121);
+      border-color: #3a3a3a;
+    }
+
+    @media (max-width: 960px) {
+      main {
+        grid-template-areas:
+          "props"
+          "process"
+          "metrics"
+          "percent"
+          "chart";
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto auto auto;
+      }
+      #chartImg { width: 100%; }
+    }
+
+    /* 저장 최적화 */
+    @media print {
+      @page { size: A4 portrait; margin: 12mm; }
+      :root {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+      body { background: #fff; color: #111; }
+      .toolbar { display: none !important; }
+      main { padding: 0; gap: 12px; }
+      .card {
+        background: #fff;
+        color: #111;
+        box-shadow: none;
+        border: 1px solid #ddd;
+      }
+      tr:nth-child(even) { background: #f7f7f7; }
+      h2 { border-bottom-color: #ddd; }
+      #chartImg { width: 100% !important; max-width: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <!-- 좌측 상단: 물성 요약 -->
+    <section id="props-summary" class="card">
+      <h2>Material Properties</h2>
+      <table id="propsTable"><tbody></tbody></table>
+    </section>
+
+    <!-- 우측 상단: 공정 슬라이더(5종) -->
+    <section id="process-slider" class="card">
+      <h2>Process Conditions</h2>
+
+      <!-- tox (nm): 산화막 두께 -->
+      <label>tox (nm): 산화막 두께
+        <input type="range" id="toxRange" min="0.5" max="5" step="0.1" value="1.2">
+        <span id="toxVal" style="float:right;opacity:.8">1.2 nm</span>
+      </label>
+
+      <!-- εr (ox): 산화막 상대유전율 -->
+      <label>εr (ox): 산화막 상대유전율
+        <input type="range" id="erRange" min="3" max="30" step="0.1" value="3.9">
+        <span id="erVal" style="float:right;opacity:.8">3.9</span>
+      </label>
+
+      <!-- NA (cm⁻³): 채널/바디 도핑 농도 (log10 스케일) -->
+      <label>NA (cm⁻³): 채널/바디 도핑 농도
+        <!-- log10(NA) 범위 14~20 (1e14 ~ 1e20) -->
+        <input type="range" id="naRange" min="14" max="20" step="0.1" value="17">
+        <span id="naVal" style="float:right;opacity:.8">1.0e17 cm⁻³</span>
+        <small style="display:block;color:var(--muted);margin-top:4px;">
+          ※ 슬라이더는 log10(NA)을 조절합니다 (14→1e14, 20→1e20).
+        </small>
+      </label>
+
+      <!-- L (nm): 채널 길이 -->
+      <label>L (nm): 채널 길이
+        <input type="range" id="LRange" min="5" max="200" step="1" value="45">
+        <span id="LVal" style="float:right;opacity:.8">45 nm</span>
+      </label>
+
+      <!-- W (μm): 채널 폭 -->
+      <label>W (μm): 채널 폭
+        <input type="range" id="WRange" min="0.1" max="100" step="0.1" value="1.0">
+        <span id="WVal" style="float:right;opacity:.8">1.0 μm</span>
+      </label>
+
+      <p style="font-size:12px;color:var(--muted);margin-top:8px;">
+        ※ 현재는 슬라이더 조작만 가능합니다 (연동 예정)
+      </p>
+    </section>
+
+    <!-- 좌측 하단: Metrics -->
+    <section id="metrics-table" class="card">
+      <h2>== Metrics ==</h2>
+      <table id="metricsTable">
+        <thead><tr><th>Property</th><th>Value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- 우측 하단: Percentiles -->
+    <section id="percentiles-table" class="card">
+      <h2>== Percentiles (0~100) ==</h2>
+      <table id="percentTable">
+        <thead><tr><th>Property</th><th>Percent</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- 그래프 -->
+    <section id="ranking-chart" class="card">
+      <h2>Relative Ranking vs Baselines</h2>
+      <img id="chartImg"
+           alt="Ranking Chart"
+           style="width:60%; height:auto; display:block; margin:auto;">
+    </section>
+  </main>
+
+  <!-- 하단 툴바 -->
+  <div class="toolbar" role="toolbar" aria-label="Actions">
+    <button class="btn" id="btnBack" type="button">← 입력창으로 돌아가기</button>
+    <button class="btn primary" id="btnPDF" type="button">🖨 출력 화면을 PDF로 저장</button>
+  </div>
+
+  <script>
+    const INPUT_URL = 'index.html';
+
+    const API = "http://127.0.0.1:7860";
+    const payload = JSON.parse(localStorage.getItem('screener_input') || 'null');
+    let   result  = JSON.parse(localStorage.getItem('screener_result') || 'null');
+
+    const fmtNum = (x)=>{
+      if (x === null || x === undefined) return '-';
+      if (typeof x !== 'number') return String(x);
+      const ax = Math.abs(x);
+      if ((ax !== 0 && ax < 1e-3) || ax >= 1e4) return x.toExponential(3);
+      return x.toFixed(3);
+    };
+
+    const UNITS = {
+      SS_mVdec:'mV/dec', Vth_V:'V', Ion_A_per_um:'A/µm',
+      gm_S_per_um:'S/µm', ft_Hz:'Hz', r0_ohm_per_um:'Ω·µm',
+      DIBL_mV_per_V:'mV/V', Stab_score:''
+    };
+
+    function safeCell(text){
+      const td = document.createElement('td');
+      td.textContent = String(text);
+      return td;
+    }
+
+    function fillPropsTable(obj){
+      const tbody = document.querySelector('#propsTable tbody');
+      tbody.innerHTML='';
+      if (!obj) return;
+      for (const [k,v] of Object.entries(obj)) {
+        const tr = document.createElement('tr');
+        tr.appendChild(safeCell(k));
+        tr.appendChild(safeCell(fmtNum(v)));
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderMetrics(metrics){
+      const tbody = document.querySelector('#metricsTable tbody');
+      tbody.innerHTML='';
+      if (!metrics) return;
+      for (const k of Object.keys(metrics)) {
+        const v = metrics[k];
+        const unit = UNITS[k] ?? '';
+        const tdVal = unit ? `${fmtNum(v)} ${unit}` : fmtNum(v);
+        const tr = document.createElement('tr');
+        tr.appendChild(safeCell(k));
+        tr.appendChild(safeCell(tdVal));
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderPercentiles(percs){
+      const tbody = document.querySelector('#percentTable tbody');
+      tbody.innerHTML='';
+      if (!percs) return;
+      Object.keys(percs).forEach(k=>{
+        const p = Number(percs[k]); if (Number.isNaN(p)) return;
+        const clamped = Math.max(0, Math.min(100, p));
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${k}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+              <div class="barwrap"><div class="barfill" style="width:${clamped}%"></div></div>
+              <div class="bartext">${p.toFixed(1)}%</div>
+            </div>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderAll(res){
+      if (payload?.props) fillPropsTable(payload.props);
+      renderMetrics(res?.metrics);
+      renderPercentiles(res?.percentiles);
+      const img = document.getElementById('chartImg');
+      if (res?.chart) {
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = 'data:image/png;base64,' + res.chart;
+      } else {
+        img.removeAttribute('src');
+      }
+    }
+
+    // -------------------- 공정 슬라이더 --------------------
+    function fmtSci(x) {
+      if (x == null || isNaN(x)) return '-';
+      return Number(x).toExponential(1).replace('e+', 'e');
+    }
+    function saveProcessToLocal(processObj) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('screener_input') || '{}');
+        stored.process = processObj;
+        localStorage.setItem('screener_input', JSON.stringify(stored));
+      } catch (e) {
+        console.warn('process 저장 실패:', e);
+      }
+    }
+    function setupProcessSliders() {
+      const tox = document.getElementById('toxRange');
+      const er  = document.getElementById('erRange');
+      const na  = document.getElementById('naRange'); 
+      const L   = document.getElementById('LRange');
+      const W   = document.getElementById('WRange');
+
+      const toxVal = document.getElementById('toxVal');
+      const erVal  = document.getElementById('erVal');
+      const naVal  = document.getElementById('naVal');
+      const LVal   = document.getElementById('LVal');
+      const WVal   = document.getElementById('WVal');
+
+      try {
+        const stored = JSON.parse(localStorage.getItem('screener_input') || '{}');
+        const p = stored?.process;
+        if (p) {
+          if (typeof p.tox_nm === 'number') tox.value = p.tox_nm;
+          if (typeof p.er_ox === 'number') er.value  = p.er_ox;
+          if (typeof p.NA_log10 === 'number') na.value = p.NA_log10;
+          if (typeof p.L_nm === 'number') L.value = p.L_nm;
+          if (typeof p.W_um === 'number') W.value = p.W_um;
+        }
+      } catch {}
+
+      function reflect() {
+        const tox_nm   = Number(tox.value);
+        const er_ox    = Number(er.value);
+        const NA_log10 = Number(na.value);
+        const NA       = Math.pow(10, NA_log10);
+        const L_nm     = Number(L.value);
+        const W_um     = Number(W.value);
+
+        toxVal.textContent = `${tox_nm.toFixed(1)} nm`;
+        erVal.textContent  = `${er_ox.toFixed(1)}`;
+        naVal.textContent  = `${fmtSci(NA)} cm⁻³`;
+        LVal.textContent   = `${L_nm.toFixed(0)} nm`;
+        WVal.textContent   = `${W_um.toFixed(1)} μm`;
+
+        saveProcessToLocal({ tox_nm, er_ox, NA, NA_log10, L_nm, W_um });
+      }
+
+      ['input','change'].forEach(evt => {
+        tox.addEventListener(evt, reflect);
+        er.addEventListener(evt, reflect);
+        na.addEventListener(evt, reflect);
+        L.addEventListener(evt, reflect);
+        W.addEventListener(evt, reflect);
+      });
+      reflect();
+    }
+    setupProcessSliders();
+
+    // ===== 결과 가져오기 =====
+    async function fetchIfNeeded(){
+      try{
+        if (!result || !result.metrics){
+          const currentPayload = JSON.parse(localStorage.getItem('screener_input') || 'null');
+          if (!currentPayload){ alert('입력 데이터가 없습니다. 메인 페이지로 돌아가주세요.'); return; }
+          const r = await fetch(`${API}/screen`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(currentPayload)
+          });
+          if (!r.ok) throw new Error('서버 응답 오류: ' + r.status);
+          result = await r.json();
+          localStorage.setItem('screener_result', JSON.stringify(result));
+        }
+        renderAll(result);
+      }catch(e){
+        console.error(e);
+        alert('결과를 불러오는 중 오류: ' + e.message);
+      }
+    }
+    fetchIfNeeded();
+
+    // ===== 하단 툴바 동작 =====
+    function goBack(){
+      if (INPUT_URL) window.location.href = INPUT_URL;
+      else history.back();
+    }
+    function saveAsPDF(){
+      document.body.classList.add('printing');
+      const cleanup = () => document.body.classList.remove('printing');
+      window.addEventListener('afterprint', cleanup, { once: true });
+      window.print();
+      setTimeout(cleanup, 3000);
+    }
+
+    document.getElementById('btnBack').addEventListener('click', goBack);
+    document.getElementById('btnPDF').addEventListener('click', saveAsPDF);
+  </script>
+</body>
+</html>
