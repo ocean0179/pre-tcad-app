@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from matplotlib.lines import Line2D
 
 import io, base64
 import matplotlib
@@ -48,10 +49,10 @@ except Exception:
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://pre-tcad-app.vercel.app"],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["POST"],
-    allow_headers=["Content-Type"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class ScreenReq(BaseModel):
@@ -77,22 +78,36 @@ PRIORITY = [
     "r0_percent", "Ioff_percent", "Stab_percent",
 ]
 
-def make_ranking_chart(percentiles: dict) -> str:
-    """percentiles(0~100)을 다크테마 가로막대로 렌더 → base64 PNG 반환"""
+def make_ranking_chart(percentiles: dict, baseline_pcts: dict | None = None) -> str:
+    """
+    percentiles(0~100)을 다크테마 가로막대로 렌더 → base64 PNG 반환
+    baseline_pcts 가 주어지면, 각 지표별로 베이스라인 재료들의 점과 범례도 함께 그림.
+    baseline_pcts 예시:
+      {
+        "Si":  {"Ion_percent": ..., "gm_percent": ..., ...},
+        "GaN": {"Ion_percent": ..., ...},
+        ...
+      }
+    """
     if not percentiles:
         return ""
 
+    baseline_pcts = baseline_pcts or {}
+
     # 순서 정리
     keys_all = list(percentiles.keys())
-    ordered = [k for k in PRIORITY if k in percentiles] + [k for k in keys_all if k not in PRIORITY]
+    ordered = [k for k in PRIORITY if k in percentiles] + [
+        k for k in keys_all if k not in PRIORITY
+    ]
 
     vals = [float(percentiles[k]) for k in ordered]
     labels = [LABELS.get(k, k) for k in ordered]
 
-    # 내림차순
+    # 내림차순 정렬
     order_idx = sorted(range(len(vals)), key=lambda i: vals[i], reverse=True)
     vals = [vals[i] for i in order_idx]
     labels = [labels[i] for i in order_idx]
+    ordered = [ordered[i] for i in order_idx]
 
     # 크기 설정
     fig_h = 0.48 * len(vals) + 1.6
@@ -101,20 +116,28 @@ def make_ranking_chart(percentiles: dict) -> str:
 
     base = (0.36, 0.62, 0.94)
     colors = [
-        (base[0]*(0.8 + 0.2*i/len(vals)),
-         base[1]*(0.8 + 0.2*i/len(vals)),
-         base[2]*(0.8 + 0.2*i/len(vals)))
+        (
+            base[0] * (0.8 + 0.2 * i / len(vals)),
+            base[1] * (0.8 + 0.2 * i / len(vals)),
+            base[2] * (0.8 + 0.2 * i / len(vals)),
+        )
         for i in range(len(vals))
     ]
 
     y = range(len(vals))
-    bars = ax.barh(y, vals, color=colors, edgecolor="#333333", linewidth=0.8)
+    bars = ax.barh(list(y), vals, color=colors, edgecolor="#333333", linewidth=0.8)
 
+    # 후보 재료 퍼센트 레이블
     for b, v in zip(bars, vals):
-        ax.text(b.get_width() + 1.2, b.get_y() + b.get_height()/2,
-                f"{v:.1f}%", va="center", ha="left",
-                color="#eaeaea", fontsize=11)
-
+        ax.text(
+            b.get_width() + 1.2,
+            b.get_y() + b.get_height() / 2,
+            f"{v:.1f}%",
+            va="center",
+            ha="left",
+            color="#eaeaea",
+            fontsize=11,
+        )
 
     ax.set_yticks(list(y), labels=labels, color="#e0e0e0", fontsize=12)
     ax.set_xlim(0, max(100, max(vals) + 6))
@@ -122,7 +145,57 @@ def make_ranking_chart(percentiles: dict) -> str:
     ax.tick_params(axis="x", colors="#cfcfcf", labelsize=11)
     ax.grid(axis="x", color="#2a2a2a", linestyle="--", linewidth=0.7, alpha=0.8)
     ax.set_xlabel("Percentile", color="#dddddd", labelpad=8)
-    ax.set_title("Relative Ranking vs Baselines", color="#ffffff", pad=10, fontsize=16, weight="bold")
+    ax.set_title(
+        "Relative Ranking vs Baselines", color="#ffffff", pad=10, fontsize=16, weight="bold"
+    )
+
+    # ---------- 여기부터 baseline 점 + 범례 ----------
+    if baseline_pcts:
+        cmap = plt.get_cmap("tab20")
+        base_names = list(baseline_pcts.keys())
+
+        # 각 지표(ordered[i])의 y 위치에 베이스라인 점 찍기
+        for j, name in enumerate(base_names):
+            color = cmap(j % 20)
+            bp = baseline_pcts[name]
+            for i, pkey in enumerate(ordered):
+                if pkey in bp:
+                    try:
+                        x = float(bp[pkey])
+                    except Exception:
+                        continue
+                    ax.plot(x, i, "o", color=color, markersize=4, alpha=0.95)
+
+        # 범례: Ion_percent 기준으로 퍼센트 표시 (없으면 첫 키 사용)
+        ref_key = "Ion_percent"
+        if not any(ref_key in baseline_pcts[n] for n in base_names):
+            # Ion_percent가 없으면 ordered 첫 번째를 사용
+            if ordered:
+                ref_key = ordered[0]
+
+        legend_handles: list[Line2D] = []
+        legend_labels: list[str] = []
+        for j, name in enumerate(base_names):
+            color = cmap(j % 20)
+            h = Line2D([0], [0], marker="o", linestyle="", color=color, markersize=6)
+            legend_handles.append(h)
+            val = baseline_pcts[name].get(ref_key)
+            if isinstance(val, (int, float)):
+                legend_labels.append(f"{name} {val:.1f}%")
+            else:
+                legend_labels.append(str(name))
+
+        if legend_handles:
+            ax.legend(
+                legend_handles,
+                legend_labels,
+                title=f"Baseline ({ref_key})",
+                bbox_to_anchor=(1.02, 1.0),
+                loc="upper left",
+                frameon=False,
+                fontsize=8,
+                title_fontsize=9,
+            )
 
     plt.tight_layout(pad=1.0)
 
@@ -140,6 +213,8 @@ def screen(req: ScreenReq):
 
     result = screen_mosfet(req.props, temp=temp, vdd=vdd)
 
-    result["chart"] = make_ranking_chart(result.get("percentiles", {}))
+    result["chart"] = make_ranking_chart(
+        result.get("percentiles", {}),
+        result.get("baseline_percentiles", {})
+    )
     return result
-
