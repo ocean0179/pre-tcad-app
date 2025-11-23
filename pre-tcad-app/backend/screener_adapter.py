@@ -8,13 +8,13 @@ def screen_mosfet(props: Dict[str, float], *, temp: float = 300.0, vdd: float = 
     """
     # 1) 재료 물성
     try:
-      m = M.MaterialInputs(
-          Eg_eV=float(props["Eg_eV"]),
-          eps_r=float(props["eps_r"]),
-          Ef_eV_atom=float(props["Ef_eV_atom"]),
-      )
+        m = M.MaterialInputs(
+            Eg_eV=float(props["Eg_eV"]),
+            eps_r=float(props["eps_r"]),
+            Ef_eV_atom=float(props["Ef_eV_atom"]),
+        )
     except KeyError as e:
-      raise KeyError(f"필수 키 누락: {e}. 필요한 키: Eg_eV, eps_r, Ef_eV_atom")
+        raise KeyError(f"필수 키 누락: {e}. 필요한 키: Eg_eV, eps_r, Ef_eV_atom")
 
     # 2) 공정/설계 파라미터
     s = M.SliderParams(
@@ -28,19 +28,29 @@ def screen_mosfet(props: Dict[str, float], *, temp: float = 300.0, vdd: float = 
         mu_cm2_Vs=float(props.get("mu_cm2_Vs", M.SliderParams.mu_cm2_Vs)),
     )
 
-    # 3) 지표 계산 및 백분위
+    # 3) 지표 계산 및 백분위(후보 재료)
     metrics = M.compute_metrics(m, s)
+    perc    = M.compute_percentiles(metrics)
+
+    # 3-1) 베이스라인 재료들의 퍼센트도 같이 계산 (점/범례용)
+    baseline_percentiles: Dict[str, Dict[str, float]] = {}
     try:
-      dist = M.build_distributions(s)  # noqa: F841
+        for name, Eg, eps_r_b, Ef in M.BASELINE:
+            bm = M.MaterialInputs(Eg_eV=Eg, eps_r=eps_r_b, Ef_eV_atom=Ef)
+            bm_metrics = M.compute_metrics(bm, s)
+            bm_perc    = M.compute_percentiles(bm_metrics)
+            baseline_percentiles[name] = bm_perc
     except Exception:
-      pass
-    perc = M.compute_percentiles(metrics)
+        # 문제가 생겨도 메인 로직은 돌아가도록
+        baseline_percentiles = {}
 
     # 4) 종합 점수/판단 (간단 가중합 예시)
-    score = float(0.25*perc.get("Ion_percent", 0.0)
-                  + 0.25*perc.get("gm_percent", 0.0)
-                  + 0.25*perc.get("fT_percent", 0.0)
-                  + 0.25*perc.get("Vth_score_percent", 0.0))
+    score = float(
+        0.25 * perc.get("Ion_percent", 0.0)
+        + 0.25 * perc.get("gm_percent", 0.0)
+        + 0.25 * perc.get("fT_percent", 0.0)
+        + 0.25 * perc.get("Vth_score_percent", 0.0)
+    )
     decision = "suitable" if score >= 70 else ("unsure" if score >= 50 else "unsuitable")
 
     result = {
@@ -56,10 +66,11 @@ def screen_mosfet(props: Dict[str, float], *, temp: float = 300.0, vdd: float = 
             "Ioff_proxy":    metrics.get("Ioff_proxy"),
         },
         "percentiles": perc,
+        "baseline_percentiles": baseline_percentiles,  # 👈 점/범례용
         "score": score,
         "decision": decision,
         "uncertainty": 0.0,
-        "explain": [],                  
+        "explain": [],
         "model_version": "colab_screener_v1",
     }
     return result
