@@ -66,7 +66,7 @@ def screen_mosfet(props: Dict[str, float], *, temp: float = 300.0, vdd: float = 
             "Ioff_proxy":    metrics.get("Ioff_proxy"),
         },
         "percentiles": perc,
-        "baseline_percentiles": baseline_percentiles,  # 👈 점/범례용
+        "baseline_percentiles": baseline_percentiles, 
         "score": score,
         "decision": decision,
         "uncertainty": 0.0,
@@ -74,3 +74,4 @@ def screen_mosfet(props: Dict[str, float], *, temp: float = 300.0, vdd: float = 
         "model_version": "colab_screener_v1",
     }
     return result
+
