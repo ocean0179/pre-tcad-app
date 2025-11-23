@@ -579,6 +579,89 @@ range_pad = w.FloatSlider(value=0.50, min=0.00, max=1.50, step=0.05,
 # -------------------------------- UI update --------------------------------
 from matplotlib.lines import Line2D
 
+def plot_ranking_figure(perc, dist, pad, legend_key="Ion_percent"):
+    """
+    perc      : compute_percentiles_from_dist(...) 결과 dict
+    dist      : build_distributions(...) 결과 dict
+    pad       : range_pad (예: 0.50)
+    legend_key: 범례에 퍼센트 붙일 지표 이름 (예: "Ion_percent")
+
+    반환값:
+      fig : Matplotlib Figure 객체
+    """
+    # 이 함수 안에서 name_map을 직접 정의 (update에서는 name_map을 전혀 쓰지 않음)
+    name_map = {
+        "SS_percent":        "SS_mVdec",
+        "Vth_score_percent": "Vth_V",
+        "Ion_percent":       "Ion_A_per_um",
+        "Ioff_percent":      "Ioff_proxy",
+        "gm_percent":        "gm_S_per_um",
+        "fT_percent":        "ft_Hz",
+        "r0_percent":        "r0_ohm_per_um",
+        "DIBL_percent":      "DIBL_mV_per_V",
+        "Stab_percent":      "Stab_score",
+    }
+
+    order_p = [
+        "SS_percent", "Vth_score_percent", "Ion_percent", "Ioff_percent",
+        "gm_percent", "fT_percent", "r0_percent", "DIBL_percent", "Stab_percent"
+    ]
+
+    keys = [k for k in order_p if k in perc]
+    vals = [float(perc[k]) for k in keys]
+
+    fig, ax = plt.subplots(figsize=(8.8, 5.4))
+    ax.barh(keys, vals)
+
+    # ----- 베이스라인 점 찍기 -----
+    for yi, pkey in enumerate(keys):
+        raw_key = name_map.get(pkey, None)
+        if raw_key is None or raw_key not in dist:
+            continue
+        for i, bv in enumerate(dist[raw_key]):
+            name  = BASE_NAMES[i]
+            color = MATERIAL_COLORS.get(name, 'k')
+            bpct  = _baseline_pct_for_key(raw_key, bv, dist, pad=pad)
+            ax.plot(bpct, yi, 'o', markersize=4, color=color, alpha=0.95)
+
+    # ----- 범례 만들기 (legend_key 기준) -----
+    raw_for_legend = name_map.get(legend_key, None)
+    legend_handles, legend_labels = [], []
+
+    if raw_for_legend in dist:
+        for i, name in enumerate(BASE_NAMES):
+            color = MATERIAL_COLORS.get(name, 'k')
+            bv = dist[raw_for_legend][i]
+            pct = _baseline_pct_for_key(raw_for_legend, bv, dist, pad=pad)
+            legend_handles.append(
+                Line2D([0], [0], marker='o', linestyle='', color=color, markersize=6)
+            )
+            legend_labels.append(f"{name} {pct:.1f}%")
+
+    ax.legend(
+        legend_handles,
+        legend_labels,
+        title=f"Baseline ({legend_key})",
+        bbox_to_anchor=(1.02, 1.0),
+        loc="upper left",
+        frameon=False,
+        fontsize=8,
+        title_fontsize=9,
+    )
+
+    # ----- 막대 끝에 퍼센트 숫자 표시 -----
+    for y, v in enumerate(vals):
+        ax.text(min(v + 1, 99.0), y, f"{v:.1f}%", va="center")
+
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("Percentile (%)")
+    ax.set_title("Relative Ranking vs Baselines (with range pad)")
+    ax.invert_yaxis()
+    fig.tight_layout()
+
+    return fig
+
+
 def update(_=None):
     """슬라이더 값이 바뀔 때마다 표/그래프/디버그를 갱신"""
     with out:
@@ -596,30 +679,40 @@ def update(_=None):
         met  = compute_metrics(m, s)
         perc = compute_percentiles_from_dist(met, dist, pad=range_pad.value)
 
-        # 2-1) 디버그
+        # 2-1) 디버그 출력
         Vth = met["Vth_V"]; Vov = s.VDD_V - Vth
         Cox = Cox_Fperm2(s.eps_ox, s.tox_nm)
         Cd  = Cd_Fperm2(m.eps_r, s.NA_cm3, m.Eg_eV, s.T_K)
-        print(f"[DEBUG] phi_F={phi_F(m.Eg_eV, s.NA_cm3, s.T_K):.3f} V, "
-              f"Vth={Vth:.3f} V, Vov={Vov:.3f} V, "
-              f"Cox={Cox:.3e} F/m² , Cd={Cd:.3e} F/m²")
+        print(
+            f"[DEBUG] phi_F={phi_F(m.Eg_eV, s.NA_cm3, s.T_K):.3f} V, "
+            f"Vth={Vth:.3f} V, Vov={Vov:.3f} V, "
+            f"Cox={Cox:.3e} F/m² , Cd={Cd:.3e} F/m²"
+        )
         if Vov <= 0.0:
-            print(" Vov≤0 → 소자가 꺼져 있습니다 (Ion/gm/fT=0, r0=0). "
-                  "tox↓, εox↑, NA↓, VDD↑, 또는 PHI_MS_V 조정으로 켜보세요.")
+            print(
+                " Vov≤0 → 소자가 꺼져 있습니다 (Ion/gm/fT=0, r0=0). "
+                "tox↓, εox↑, NA↓, VDD↑, 또는 PHI_MS_V 조정으로 켜보세요."
+            )
 
-        # 3) 표
-        order_m = ["SS_mVdec","Vth_V","Ion_A_per_um","Ioff_proxy","gm_S_per_um","ft_Hz",
-                   "r0_ohm_per_um","DIBL_mV_per_V","Stab_score"]
-        order_p = ["SS_percent","Vth_score_percent","Ion_percent","Ioff_percent","gm_percent",
-                   "fT_percent","r0_percent","DIBL_percent","Stab_percent"]
+        # 3) 표 (지금 구조 그대로 유지)
+        order_m = [
+            "SS_mVdec","Vth_V","Ion_A_per_um","Ioff_proxy","gm_S_per_um","ft_Hz",
+            "r0_ohm_per_um","DIBL_mV_per_V","Stab_score"
+        ]
+        order_p = [
+            "SS_percent","Vth_score_percent","Ion_percent","Ioff_percent","gm_percent",
+            "fT_percent","r0_percent","DIBL_percent","Stab_percent"
+        ]
 
         df_m = pd.DataFrame(met, index=['value']).T.reindex(order_m)
         df_p = pd.DataFrame(perc, index=['percent']).T.reindex(order_p)
 
         def _fmt_row(row):
             k = row.name; v = row["value"]
-            if k == "SS_mVdec": return f"{v:.1f}"
-            if k in ("Vth_V","DIBL_mV_per_V","Stab_score"): return f"{v:.3f}"
+            if k == "SS_mVdec":
+                return f"{v:.1f}"
+            if k in ("Vth_V","DIBL_mV_per_V","Stab_score"):
+                return f"{v:.3f}"
             return fmt_floor_e(v)
 
         df_m_disp = df_m.copy()
@@ -630,62 +723,27 @@ def update(_=None):
         print("\n== Percentiles (0~100, physical-range normalized) ==")
         display(df_p.style.format("{:.1f}%"))
 
-        # 4) 그래프(점 + 범례)
+        # 4) 그래프(점 + 범례) – 여기서는 plot_ranking_figure만 호출
         legend_key = legend_metric_dd.value
-        name_map = {
-            "SS_percent":"SS_mVdec", "Vth_score_percent":"Vth_V",
-            "Ion_percent":"Ion_A_per_um", "Ioff_percent":"Ioff_proxy",
-            "gm_percent":"gm_S_per_um", "fT_percent":"ft_Hz",
-            "r0_percent":"r0_ohm_per_um", "DIBL_percent":"DIBL_mV_per_V",
-            "Stab_percent":"Stab_score",
-        }
 
-        keys = [k for k in order_p if k in perc]
-        vals = [float(perc[k]) for k in keys]
+        # perc 안에 유효한 숫자 값이 있는지 확인
+        vals_for_check = [
+            float(perc[k]) for k in order_p
+            if (k in perc and isinstance(perc[k], (int, float)))
+        ]
+        has_valid = any(math.isfinite(v) for v in vals_for_check) if vals_for_check else False
 
-        if any(not math.isnan(v) for v in vals):
-            plt.figure(figsize=(8.8, 5.4))
-            ax = plt.gca()
-            plt.barh(keys, vals)
-
-            # 베이스라인 점(패딩 규칙 동일 적용)
-            for yi, pkey in enumerate(keys):
-                raw_key = name_map.get(pkey, None)
-                if raw_key is None or raw_key not in dist:
-                    continue
-                for i, bv in enumerate(dist[raw_key]):
-                    name  = BASE_NAMES[i]
-                    color = MATERIAL_COLORS.get(name, 'k')
-                    bpct  = _baseline_pct_for_key(raw_key, bv, dist, pad=range_pad.value)
-                    ax.plot(bpct, yi, 'o', markersize=4, color=color, alpha=0.95)
-
-            # 범례: 드롭다운에서 고른 지표의 퍼센트 표기 (pad 동일)
-            raw_for_legend = name_map.get(legend_key, None)
-            legend_handles, legend_labels = [], []
-            if raw_for_legend in dist:
-                for i, name in enumerate(BASE_NAMES):
-                    color = MATERIAL_COLORS.get(name, 'k')
-                    bv = dist[raw_for_legend][i]
-                    pct = _baseline_pct_for_key(raw_for_legend, bv, dist, pad=range_pad.value)
-                    legend_handles.append(Line2D([0],[0], marker='o', linestyle='', color=color, markersize=6))
-                    legend_labels.append(f"{name} {pct:.1f}%")
-
-            ax.legend(legend_handles, legend_labels,
-                      title=f"Baseline ({legend_key})",
-                      bbox_to_anchor=(1.02, 1.0), loc="upper left",
-                      frameon=False, fontsize=8, title_fontsize=9)
-
-            for y, v in enumerate(vals):
-                ax.text(min(v + 1, 99.0), y, f"{v:.1f}%", va="center")
-
-            plt.xlim(0, 100)
-            plt.xlabel("Percentile (%)")
-            plt.title("Relative Ranking vs Baselines (with range pad)")
-            plt.gca().invert_yaxis()
-            plt.tight_layout()
-            plt.show()
+        if has_valid:
+            fig = plot_ranking_figure(
+                perc=perc,
+                dist=dist,
+                pad=range_pad.value,
+                legend_key=legend_key,
+            )
+            plt.show(fig)
         else:
             print(" 그래프 생략: 표시할 퍼센트 값이 없음.")
+
 
 # -------- 옵저버 & 레이아웃 ----------
 all_widgets = [Eg_eV, eps_r, Ef_eV_atom, tox_nm, eps_ox, NA_cm3, L_nm, VDD_V,
@@ -711,6 +769,3 @@ display(ui_top)
 display(w.HBox([ui_left, ui_right]))
 display(out)
 update()
-
-
-
