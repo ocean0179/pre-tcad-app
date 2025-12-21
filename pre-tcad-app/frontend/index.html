@@ -9,17 +9,21 @@
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:var(--bg);color:var(--fg)}
   main{max-width:980px;margin:40px auto;padding:0 16px}
   .card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 1px 8px rgba(0,0,0,.04);margin-bottom:16px}
-  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,50px));gap:55px}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
   label{font-weight:600;font-size:14px}
   input{width:100%;padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px}
   button{padding:.7rem 1rem;border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer}
+  button.primary{background:#111;color:#fff;border-color:#111}
   .muted{color:var(--muted);font-size:13px}
   .title{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
   .title h1{margin:0}
-  .disabled{opacity:.6;pointer-events:none}
   .pill{display:inline-block;padding:.2rem .6rem;border:1px solid var(--border);border-radius:999px;font-size:12px}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .ok{color:#1a7f37}
+  .warn{color:#b45309}
 </style>
 </head>
+
 <body>
 <main>
   <div class="title">
@@ -27,19 +31,31 @@
     <span class="pill">Input Page</span>
   </div>
 
-  <!-- CIF 업로드 영역(비활성) -->
+  <!-- CIF 업로드 -->
   <div class="card">
     <h3>CIF 업로드</h3>
-    <p class="muted">현재는 CIF 업로드 기능을 준비 중이에요. 값 직접 입력으로 테스트해주세요.</p>
-    <div class="row disabled">
-      <div><label for="cif">CIF 파일</label><input id="cif" type="file" accept=".cif"></div>
-      <div><label>&nbsp;</label><button disabled>분석(업로드)</button></div>
+    <p class="muted">CIF를 선택하면 <b>CIF 모드</b>로 실행됩니다. (파일 내용을 localStorage에 저장한 뒤 result.html에서 /screen_alignn 호출)</p>
+
+    <div class="row" style="align-items:end">
+      <div>
+        <label for="cif">CIF 파일</label>
+        <input id="cif" type="file" accept=".cif">
+        <div id="cifInfo" class="hint">선택된 파일 없음</div>
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="runCif" class="primary" type="button">CIF로 분석 실행 → 출력 페이지</button>
+        <div class="hint">※ CIF 파일 내용을 읽는 데 몇 초 걸릴 수 있어요.</div>
+      </div>
     </div>
   </div>
 
   <!-- 값 직접 입력 -->
   <div class="card">
-    <h3>재료/소자 파라미터 입력</h3>
+    <h3>재료/소자 파라미터 직접 입력</h3>
+    <p class="muted">CIF 없이도 아래 값을 직접 입력하면 <b>props 모드</b>로 실행됩니다. (result.html에서 /screen 호출)</p>
+
     <div class="row">
       <div><label>Eg (eV)</label><input id="Eg_eV" type="number" step="0.01" value="1.12"></div>
       <div><label>εr</label><input id="eps_r" type="number" step="0.1" value="11.7"></div>
@@ -56,19 +72,18 @@
       <div><label>VDD (V)</label><input id="VDD" type="number" step="0.05" value="1.0"></div>
     </div>
 
-    <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
-      <button id="run">분석 실행 → 출력 페이지</button>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <button id="runProps" type="button">직접 입력으로 실행 → 출력 페이지</button>
       <span id="status" class="muted"></span>
-      <span class="muted">※ 지금은 서버 호출 없이, 입력값만 저장하고 이동합니다.</span>
     </div>
   </div>
 
   <div class="card">
     <h3>프리셋</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="preset" data-preset="si">Si (일반)</button>
-      <button class="preset" data-preset="si_long">Si (롱채널/고전압)</button>
-      <button class="preset" data-preset="short">단채널/저전압</button>
+      <button class="preset" data-preset="si" type="button">Si (일반)</button>
+      <button class="preset" data-preset="si_long" type="button">Si (롱채널/고전압)</button>
+      <button class="preset" data-preset="short" type="button">단채널/저전압</button>
     </div>
     <p class="muted">프리셋을 누르면 입력값이 자동으로 채워집니다.</p>
   </div>
@@ -76,28 +91,111 @@
 
 <script>
 const $ = id => document.getElementById(id);
-function toNum(id){ const v = $(id).value.trim(); return v===""? null : Number(v); }
-function setVals(obj){ for (const [k,v] of Object.entries(obj)) { const el = $(k); if (el) el.value = v; } }
+function toNum(id){
+  const v = $(id).value.trim();
+  return v==="" ? null : Number(v);
+}
+function setVals(obj){
+  for (const [k,v] of Object.entries(obj)) {
+    const el = $(k);
+    if (el) el.value = v;
+  }
+}
 
 const PRESETS = {
-  si: { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:450, tox_nm:1.2, eps_ox:3.9, NA_cm3:1e17, L_nm:45, W_um:1.0, T:300, VDD:1.0 },
+  si:      { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:450,  tox_nm:1.2, eps_ox:3.9, NA_cm3:1e17, L_nm:45,  W_um:1.0, T:300, VDD:1.0 },
   si_long: { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:1350, tox_nm:2.0, eps_ox:3.9, NA_cm3:1e16, L_nm:180, W_um:1.0, T:300, VDD:1.8 },
-  short: { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:300, tox_nm:1.0, eps_ox:3.9, NA_cm3:5e17, L_nm:20, W_um:1.0, T:300, VDD:0.7 }
+  short:   { Eg_eV:1.12, eps_r:11.7, Ef_eV_atom:-1.0, mu_cm2_Vs:300,  tox_nm:1.0, eps_ox:3.9, NA_cm3:5e17, L_nm:20,  W_um:1.0, T:300, VDD:0.7 }
 };
 document.querySelectorAll('.preset').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     const p = PRESETS[btn.dataset.preset];
     setVals(p);
+    $('status').textContent = '';
   });
 });
 
-$('run').onclick = () => {
+// 결과 페이지로 이동 헬퍼
+function goResult(){
+  const base = window.location.pathname.replace(/index\.html?$/, '');
+  window.location.href = base + 'result.html';
+}
+
+// CIF 파일 정보 표시
+$('cif').addEventListener('change', ()=>{
+  const f = $('cif').files?.[0];
+  $('cifInfo').textContent = f ? `선택됨: ${f.name} (${Math.round(f.size/1024)} KB)` : '선택된 파일 없음';
+  $('status').textContent = '';
+});
+
+// CIF 모드 실행
+$('runCif').addEventListener('click', async ()=>{
+  const file = $('cif').files?.[0];
+  if (!file) {
+    $('status').innerHTML = '<span class="warn">CIF 파일을 선택해주세요.</span>';
+    return;
+  }
+
+  try{
+    $('status').textContent = 'CIF 읽는 중...';
+
+    // ✅ 핵심: CIF "내용"을 읽어서 저장
+    const cifText = await file.text();
+
+    // 공정/조건도 같이 저장 (result.html 슬라이더 초기값/조건용)
+    const tox_nm = toNum('tox_nm');
+    const eps_ox = toNum('eps_ox');
+    const NA_cm3 = toNum('NA_cm3');
+    const L_nm   = toNum('L_nm');
+    const W_um   = toNum('W_um');
+
+    const temp = toNum('T');
+    const vdd  = toNum('VDD');
+
+    const payload = {
+      via: 'cif',
+      cif_filename: file.name,
+      cif: cifText, // ⭐⭐⭐ 이게 없으면 result.html에서 재계산 불가
+
+      // 백엔드 AlignnReq에 맞춰 기본값 제공
+      device: 'nmos',
+      conditions: {
+        temp: temp ?? 300,
+        vdd:  vdd  ?? 0.9,
+
+        // (프론트에서 보관) 공정 변수
+        process: { tox_nm, eps_ox, NA_cm3, L_nm, W_um }
+      },
+
+      // (프론트 UI 복원용) process 따로도 저장
+      process: {
+        tox_nm, eps_ox,
+        NA_cm3,
+        NA_log10: (NA_cm3 && NA_cm3>0) ? Math.log10(NA_cm3) : 17,
+        L_nm, W_um
+      }
+    };
+
+    localStorage.setItem('screener_input', JSON.stringify(payload));
+    localStorage.removeItem('screener_result'); // 이전 결과는 비워두는 게 안전
+
+    $('status').innerHTML = '<span class="ok">저장 완료! 출력 페이지로 이동합니다.</span>';
+    goResult();
+  } catch(e){
+    console.error(e);
+    $('status').innerHTML = '<span class="warn">CIF 읽기 실패. 다른 파일로 다시 시도해보세요.</span>';
+  }
+});
+
+// props(직접입력) 모드 실행
+$('runProps').addEventListener('click', ()=>{
   const payload = {
     props: {
       Eg_eV: toNum('Eg_eV'),
       eps_r: toNum('eps_r'),
       Ef_eV_atom: toNum('Ef_eV_atom'),
       mu_cm2_Vs: toNum('mu_cm2_Vs'),
+
       tox_nm: toNum('tox_nm'),
       eps_ox: toNum('eps_ox'),
       NA_cm3: toNum('NA_cm3'),
@@ -105,20 +203,30 @@ $('run').onclick = () => {
       W_um: toNum('W_um')
     },
     device: "MOSFET",
-    conditions: { temp: toNum('T'), vdd: toNum('VDD') }
+    conditions: { temp: toNum('T'), vdd: toNum('VDD') },
+
+    // UI 복원용(선택)
+    process: {
+      tox_nm: toNum('tox_nm'),
+      eps_ox: toNum('eps_ox'),
+      NA_cm3: toNum('NA_cm3'),
+      NA_log10: (toNum('NA_cm3') && toNum('NA_cm3')>0) ? Math.log10(toNum('NA_cm3')) : 17,
+      L_nm: toNum('L_nm'),
+      W_um: toNum('W_um')
+    }
   };
 
-  // 필수값 간단 검증
+  // 필수값 검증
   if (payload.props.Eg_eV == null || payload.props.eps_r == null || payload.props.Ef_eV_atom == null) {
-    $('status').textContent = '필수값(Eg, εr, Ef_atom)을 입력해주세요.';
+    $('status').innerHTML = '<span class="warn">필수값(Eg, εr, Ef_atom)을 입력해주세요.</span>';
     return;
   }
 
-  // 저장 및 이동
   localStorage.setItem('screener_input', JSON.stringify(payload));
-  const base = window.location.pathname.replace(/index\.html?$/, '');
-  window.location.href = base + 'result.html';
-};
+  localStorage.removeItem('screener_result');
+  $('status').innerHTML = '<span class="ok">저장 완료! 출력 페이지로 이동합니다.</span>';
+  goResult();
+});
 </script>
 </body>
 </html>
