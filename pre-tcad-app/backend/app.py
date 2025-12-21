@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from matplotlib.lines import Line2D
-
+from alignn_adapter import predict_props_from_cif
+from screener_adapter import screen_mosfet, make_ranking_chart
 import io, base64
 import matplotlib
 matplotlib.use("Agg")  
@@ -213,8 +214,184 @@ def screen(req: ScreenReq):
 
     result = screen_mosfet(req.props, temp=temp, vdd=vdd)
 
+    result["inputs"] = dict(req.props)
+
     result["chart"] = make_ranking_chart(
         result.get("percentiles", {}),
         result.get("baseline_percentiles", {})
     )
+    return result
+
+class AlignnReq(BaseModel):
+    cif: str
+    device: str = "nmos"
+    conditions: dict | None = None
+
+def make_ranking_chart(percentiles: dict, baseline_percentiles: dict):
+    import io, base64
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    if not isinstance(percentiles, dict) or not percentiles:
+        return ""
+
+    ORDER = [
+        "SS_percent", "DIBL_percent", "Vth_score_percent",
+        "Ion_percent", "Ioff_percent", "gm_percent",
+        "fT_percent", "r0_percent", "Stab_percent"
+    ]
+    keys = [k for k in ORDER if k in percentiles]
+
+    NAME_MAP = {
+        "SS_percent": "SS",
+        "DIBL_percent": "DIBL",
+        "Vth_score_percent": "Vth",
+        "Ion_percent": "Ion",
+        "Ioff_percent": "Ioff",
+        "gm_percent": "gm",
+        "fT_percent": "fT",
+        "r0_percent": "r0",
+        "Stab_percent": "Stability",
+    }
+
+    def to_float(x):
+        try:
+            return float(x)
+        except Exception:
+            return np.nan
+
+    # ===== 현재 값 (막대) =====
+    cur = np.array([to_float(percentiles.get(k)) for k in keys])
+    cur = np.clip(np.nan_to_num(cur, nan=0.0), 0, 100)
+
+    # ===== baseline 색상 팔레트 =====
+    COLORS = [
+        "#ffffff", "#ffcc00", "#ff7f0e", "#2ca02c",
+        "#d62728", "#9467bd", "#8c564b",
+        "#e377c2", "#7f7f7f", "#17becf"
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 5), dpi=200)
+    fig.patch.set_facecolor("#111111")
+    ax.set_facecolor("#1e1e1e")
+
+    ax.tick_params(colors="#eeeeee")
+    ax.xaxis.label.set_color("#eeeeee")
+    ax.title.set_color("#eeeeee")
+    for spine in ax.spines.values():
+        spine.set_color("#444444")
+
+    ax.grid(axis="x", color="#444444", alpha=0.35)
+    ax.set_axisbelow(True)
+
+    y = np.arange(len(keys))
+
+    # ✅ 막대 = 현재 material
+    ax.barh(y, cur, height=0.70, color="#5aa5ff", alpha=0.9)
+
+    # ✅ baseline = 여러 material 점들
+    if isinstance(baseline_percentiles, dict):
+        for i, (mat, vals) in enumerate(baseline_percentiles.items()):
+            if not isinstance(vals, dict):
+                continue
+
+            base = np.array([to_float(vals.get(k)) for k in keys])
+            base = np.clip(base, 0, 100)
+
+            mask = ~np.isnan(base)
+            if not mask.any():
+                continue
+
+            ax.scatter(
+                base[mask], y[mask],
+                s=70,
+                color=COLORS[i % len(COLORS)],
+                edgecolors="black",
+                linewidths=0.8,
+                zorder=10,
+                label=mat
+            )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([NAME_MAP[k] for k in keys], color="#eeeeee")
+    ax.set_xlim(0, 100)
+    ax.invert_yaxis()
+    ax.set_xlabel("Percentile (0~100)")
+    ax.set_title("Relative Ranking vs Baselines")
+
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        labelcolor="white"
+    )
+
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+@app.post("/screen_alignn")
+def screen_alignn(req: AlignnReq):
+    print("### screen_alignn HIT ###")
+
+    # 1) CIF → ALIGNN 예측
+    raw_props = predict_props_from_cif(req.cif)
+    print("ALIGNN OUTPUT:", raw_props)
+
+    # 2) MOSFET 스크리너 입력용 키로 변환
+    props = {
+        "Eg_eV":      float(raw_props.get("bandgap")),
+        "eps_r":      float(raw_props.get("permittivity")),
+        "Ef_eV_atom": float(raw_props.get("formation_energy")),
+    }
+
+    # 3) 기본 공정값
+    defaults = {
+        "mu_cm2_Vs": 450.0,
+        "tox_nm": 2.0,
+        "eps_ox": 3.9,
+        "NA_cm3": 1e17,
+        "L_nm": 45.0,
+        "W_um": 1.0,
+    }
+    for k, v in defaults.items():
+        props.setdefault(k, v)
+
+    # 4) 슬라이더 공정값 병합
+    cond = req.conditions or {}
+    process = cond.get("process", {}) if isinstance(cond, dict) else {}
+    if isinstance(process, dict):
+        for k in defaults.keys():
+            if k in process and process[k] is not None:
+                props[k] = float(process[k])
+
+    temp = float(cond.get("temp", 300.0))
+    vdd  = float(cond.get("vdd", 0.9))
+
+    # 5) 스크리너 실행
+    result = screen_mosfet(props, temp=temp, vdd=vdd)
+
+    print("PERCENTILES:", result.get("percentiles"))
+    print("BASELINE_PERCENTILES:", result.get("baseline_percentiles"))
+
+    # 6) baseline 평탄화 (Si 기준)
+    bp = result.get("baseline_percentiles") or {}
+    if isinstance(bp, dict) and bp and all(isinstance(v, dict) for v in bp.values()):
+        bp_flat = bp.get("Si") or next(iter(bp.values()))
+    else:
+        bp_flat = bp
+
+    # 7) 프론트 표시용 inputs
+    result["inputs"] = props
+
+    # 8) 차트 생성 (A안)
+    result["chart"] = make_ranking_chart(
+    result.get("percentiles", {}),
+    result.get("baseline_percentiles", {})  # ← 평탄화 ❌
+)
+
     return result
