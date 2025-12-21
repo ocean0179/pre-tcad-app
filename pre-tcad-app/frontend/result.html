@@ -34,7 +34,7 @@
       grid-template-columns: 1fr 1fr;
       grid-template-rows: auto auto auto;
       gap: 20px;
-      padding: 20px 20px 92px; 
+      padding: 20px 20px 92px;
       max-width: 1400px;
       margin: 0 auto;
     }
@@ -143,13 +143,9 @@
       #chartImg { width: 100%; }
     }
 
-    /* 저장 최적화 */
     @media print {
       @page { size: A4 portrait; margin: 12mm; }
-      :root {
-        print-color-adjust: exact;
-        -webkit-print-color-adjust: exact;
-      }
+      :root { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
       body { background: #fff; color: #111; }
       .toolbar { display: none !important; }
       main { padding: 0; gap: 12px; }
@@ -168,31 +164,25 @@
 
 <body>
   <main>
-    <!-- 좌측 상단: 물성 요약 -->
     <section id="props-summary" class="card">
       <h2>Material Properties</h2>
       <table id="propsTable"><tbody></tbody></table>
     </section>
 
-    <!-- 우측 상단: 공정 슬라이더(5종) -->
     <section id="process-slider" class="card">
       <h2>Process Conditions</h2>
 
-      <!-- tox (nm): 산화막 두께 -->
       <label>tox (nm): 산화막 두께
         <input type="range" id="toxRange" min="0.5" max="5" step="0.1" value="1.2">
         <span id="toxVal" style="float:right;opacity:.8">1.2 nm</span>
       </label>
 
-      <!-- εr (ox): 산화막 상대유전율 -->
       <label>εr (ox): 산화막 상대유전율
         <input type="range" id="erRange" min="3" max="30" step="0.1" value="3.9">
         <span id="erVal" style="float:right;opacity:.8">3.9</span>
       </label>
 
-      <!-- NA (cm⁻³): 채널/바디 도핑 농도 (log10 스케일) -->
       <label>NA (cm⁻³): 채널/바디 도핑 농도
-        <!-- log10(NA) 범위 14~20 (1e14 ~ 1e20) -->
         <input type="range" id="naRange" min="14" max="20" step="0.1" value="17">
         <span id="naVal" style="float:right;opacity:.8">1.0e17 cm⁻³</span>
         <small style="display:block;color:var(--muted);margin-top:4px;">
@@ -200,24 +190,21 @@
         </small>
       </label>
 
-      <!-- L (nm): 채널 길이 -->
       <label>L (nm): 채널 길이
         <input type="range" id="LRange" min="5" max="200" step="1" value="45">
         <span id="LVal" style="float:right;opacity:.8">45 nm</span>
       </label>
 
-      <!-- W (μm): 채널 폭 -->
       <label>W (μm): 채널 폭
         <input type="range" id="WRange" min="0.1" max="100" step="0.1" value="1.0">
         <span id="WVal" style="float:right;opacity:.8">1.0 μm</span>
       </label>
 
-      <p style="font-size:12px;color:var(--muted);margin-top:8px;">
-        ※ 현재는 슬라이더 조작만 가능합니다 (연동 예정)
+      <p id="hintLive" style="font-size:12px;color:var(--muted);margin-top:8px;">
+        ✅ 슬라이더 변경 시 자동으로 재계산됩니다.
       </p>
     </section>
 
-    <!-- 좌측 하단: Metrics -->
     <section id="metrics-table" class="card">
       <h2>== Metrics ==</h2>
       <table id="metricsTable">
@@ -226,7 +213,6 @@
       </table>
     </section>
 
-    <!-- 우측 하단: Percentiles -->
     <section id="percentiles-table" class="card">
       <h2>== Percentiles (0~100) ==</h2>
       <table id="percentTable">
@@ -235,16 +221,12 @@
       </table>
     </section>
 
-    <!-- 그래프 -->
     <section id="ranking-chart" class="card">
       <h2>Relative Ranking vs Baselines</h2>
-      <img id="chartImg"
-           alt="Ranking Chart"
-           style="width:60%; height:auto; display:block; margin:auto;">
+      <img id="chartImg" alt="Ranking Chart" style="width:60%; height:auto; display:block; margin:auto;">
     </section>
   </main>
 
-  <!-- 하단 툴바 -->
   <div class="toolbar" role="toolbar" aria-label="Actions">
     <button class="btn" id="btnBack" type="button">← 입력창으로 돌아가기</button>
     <button class="btn primary" id="btnPDF" type="button">🖨 출력 화면을 PDF로 저장</button>
@@ -252,10 +234,10 @@
 
   <script>
     const INPUT_URL = 'index.html';
+    const API = "http://127.0.0.1:7860";
 
-    const API = "https://pre-tcad-app.onrender.com";
-    const payload = JSON.parse(localStorage.getItem('screener_input') || 'null');
-    let   result  = JSON.parse(localStorage.getItem('screener_result') || 'null');
+    const img = document.getElementById('chartImg');
+    const hintLive = document.getElementById('hintLive');
 
     const fmtNum = (x)=>{
       if (x === null || x === undefined) return '-';
@@ -324,12 +306,20 @@
       });
     }
 
+    // ✅ 절대 안 죽는 렌더러
     function renderAll(res){
-      if (payload?.props) fillPropsTable(payload.props);
-      renderMetrics(res?.metrics);
-      renderPercentiles(res?.percentiles);
-      const img = document.getElementById('chartImg');
-      if (res?.chart) {
+      const stored = JSON.parse(localStorage.getItem('screener_input') || 'null');
+
+      const inputs = (res && typeof res === 'object' && res.inputs)
+        ? res.inputs
+        : (stored && stored.props ? stored.props : null);
+
+      if (inputs) fillPropsTable(inputs);
+
+      renderMetrics(res?.metrics || null);
+      renderPercentiles(res?.percentiles || null);
+
+      if (res?.chart && typeof res.chart === 'string' && res.chart.length > 50) {
         img.loading = 'lazy';
         img.decoding = 'async';
         img.src = 'data:image/png;base64,' + res.chart;
@@ -343,19 +333,119 @@
       if (x == null || isNaN(x)) return '-';
       return Number(x).toExponential(1).replace('e+', 'e');
     }
+
+    // ✅ process + (가능하면) props에 공정값을 반영
     function saveProcessToLocal(processObj) {
-      try {
-        const stored = JSON.parse(localStorage.getItem('screener_input') || '{}');
-        stored.process = processObj;
-        localStorage.setItem('screener_input', JSON.stringify(stored));
-      } catch (e) {
-        console.warn('process 저장 실패:', e);
+      const stored = JSON.parse(localStorage.getItem('screener_input') || '{}');
+
+      stored.process = processObj; // UI 복원용
+
+      // props가 있으면 (물성 입력 흐름) 공정값을 props에 덮어써서 /screen에 반영
+      stored.props = stored.props || null;
+      if (stored.props) {
+        stored.props.tox_nm = processObj.tox_nm;
+        stored.props.eps_ox = processObj.eps_ox;
+        stored.props.NA_cm3 = processObj.NA_cm3;
+        stored.props.L_nm   = processObj.L_nm;
+        stored.props.W_um   = processObj.W_um;
+      }
+
+      // CIF 흐름일 때도 나중에 백엔드가 쓸 수 있도록 conditions에 보관
+      stored.conditions = stored.conditions || { temp: 300, vdd: 0.9 };
+      stored.conditions.process = {
+        tox_nm: processObj.tox_nm,
+        eps_ox: processObj.eps_ox,
+        NA_cm3: processObj.NA_cm3,
+        L_nm: processObj.L_nm,
+        W_um: processObj.W_um
+      };
+
+      localStorage.setItem('screener_input', JSON.stringify(stored));
+    }
+
+    // ✅ 현재 저장된 입력으로 endpoint+payload 구성
+    function buildRequestForServer(){
+      const stored = JSON.parse(localStorage.getItem('screener_input') || 'null');
+      if (!stored) return null;
+
+      // CIF 흐름: cif 텍스트가 있어야 /screen_alignn 호출 가능
+      if (stored.via === 'cif') {
+        if (!stored.cif || typeof stored.cif !== 'string' || stored.cif.length < 20) {
+          return { error: "CIF 내용이 localStorage에 없습니다. index.html에서 파일을 다시 업로드/실행해주세요." };
+        }
+        return {
+          endpoint: "/screen_alignn",
+          body: {
+            cif: stored.cif,
+            device: stored.device || "nmos",
+            conditions: stored.conditions || { temp: 300, vdd: 0.9 }
+          }
+        };
+      }
+
+      // props 흐름
+      if (stored.props) {
+        return {
+          endpoint: "/screen",
+          body: {
+            props: stored.props,
+            device: stored.device || "MOSFET",
+            conditions: stored.conditions || { temp: 300, vdd: 0.9 }
+          }
+        };
+      }
+
+      return { error: "입력 데이터가 없습니다. index.html에서 다시 실행해주세요." };
+    }
+
+    // debounce + abort
+    let recomputeTimer = null;
+    function debounceRecompute(){
+      clearTimeout(recomputeTimer);
+      recomputeTimer = setTimeout(()=>recomputeAndRender(), 180);
+    }
+
+    let inflight = null;
+    async function recomputeAndRender(){
+      const req = buildRequestForServer();
+      if (!req) return;
+
+      if (req.error) {
+        hintLive.textContent = "⚠️ " + req.error;
+        return;
+      }
+
+      if (inflight) inflight.abort();
+      inflight = new AbortController();
+
+      try{
+        hintLive.textContent = "⏳ 재계산 중...";
+
+        const r = await fetch(`${API}${req.endpoint}`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(req.body),
+          signal: inflight.signal
+        });
+
+        if (!r.ok) throw new Error("HTTP " + r.status);
+
+        const fresh = await r.json();
+        localStorage.setItem('screener_result', JSON.stringify(fresh));
+        renderAll(fresh);
+
+        hintLive.textContent = "✅ 슬라이더 변경 시 자동으로 재계산됩니다.";
+      } catch(e){
+        if (e.name === 'AbortError') return;
+        console.error(e);
+        hintLive.textContent = "⚠️ 재계산 실패 (서버/입력 확인 필요)";
       }
     }
+
     function setupProcessSliders() {
       const tox = document.getElementById('toxRange');
       const er  = document.getElementById('erRange');
-      const na  = document.getElementById('naRange'); 
+      const na  = document.getElementById('naRange');
       const L   = document.getElementById('LRange');
       const W   = document.getElementById('WRange');
 
@@ -365,12 +455,13 @@
       const LVal   = document.getElementById('LVal');
       const WVal   = document.getElementById('WVal');
 
+      // 초기값: stored.process 있으면 복원
       try {
         const stored = JSON.parse(localStorage.getItem('screener_input') || '{}');
         const p = stored?.process;
         if (p) {
           if (typeof p.tox_nm === 'number') tox.value = p.tox_nm;
-          if (typeof p.er_ox === 'number') er.value  = p.er_ox;
+          if (typeof p.eps_ox === 'number') er.value  = p.eps_ox;
           if (typeof p.NA_log10 === 'number') na.value = p.NA_log10;
           if (typeof p.L_nm === 'number') L.value = p.L_nm;
           if (typeof p.W_um === 'number') W.value = p.W_um;
@@ -379,19 +470,26 @@
 
       function reflect() {
         const tox_nm   = Number(tox.value);
-        const er_ox    = Number(er.value);
+
+        // ✅ er_ox 미정의 문제 해결: eps_ox로 통일
+        const eps_ox   = Number(er.value);
+
         const NA_log10 = Number(na.value);
-        const NA       = Math.pow(10, NA_log10);
+        const NA_cm3   = Math.pow(10, NA_log10);
+
         const L_nm     = Number(L.value);
         const W_um     = Number(W.value);
 
         toxVal.textContent = `${tox_nm.toFixed(1)} nm`;
-        erVal.textContent  = `${er_ox.toFixed(1)}`;
-        naVal.textContent  = `${fmtSci(NA)} cm⁻³`;
+        erVal.textContent  = `${eps_ox.toFixed(1)}`;
+        naVal.textContent  = `${fmtSci(NA_cm3)} cm⁻³`;
         LVal.textContent   = `${L_nm.toFixed(0)} nm`;
         WVal.textContent   = `${W_um.toFixed(1)} μm`;
 
-        saveProcessToLocal({ tox_nm, er_ox, NA, NA_log10, L_nm, W_um });
+        saveProcessToLocal({ tox_nm, eps_ox, NA_cm3, NA_log10, L_nm, W_um });
+
+        // ✅ 슬라이더 변경 즉시 재계산
+        debounceRecompute();
       }
 
       ['input','change'].forEach(evt => {
@@ -401,34 +499,29 @@
         L.addEventListener(evt, reflect);
         W.addEventListener(evt, reflect);
       });
-      reflect();
+
+      reflect(); // 최초 1회 반영 + 1회 계산
     }
+
     setupProcessSliders();
 
-    // ===== 결과 가져오기 =====
+    // -------------------- 최초 로딩 --------------------
     async function fetchIfNeeded(){
       try{
-        if (!result || !result.metrics){
-          const currentPayload = JSON.parse(localStorage.getItem('screener_input') || 'null');
-          if (!currentPayload){ alert('입력 데이터가 없습니다. 메인 페이지로 돌아가주세요.'); return; }
-          const r = await fetch(`${API}/screen`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify(currentPayload)
-          });
-          if (!r.ok) throw new Error('서버 응답 오류: ' + r.status);
-          result = await r.json();
-          localStorage.setItem('screener_result', JSON.stringify(result));
-        }
-        renderAll(result);
-      }catch(e){
+        // 1) 캐시가 있으면 우선 렌더
+        const cached = JSON.parse(localStorage.getItem('screener_result') || 'null');
+        if (cached && typeof cached === 'object') renderAll(cached);
+
+        // 2) 서버 최신값으로 동기화
+        await recomputeAndRender();
+      } catch(e){
         console.error(e);
-        alert('결과를 불러오는 중 오류: ' + e.message);
+        hintLive.textContent = "⚠️ 서버 연결 실패 (저장된 결과 표시 중)";
       }
     }
     fetchIfNeeded();
 
-    // ===== 하단 툴바 동작 =====
+    // -------------------- 하단 툴바 --------------------
     function goBack(){
       if (INPUT_URL) window.location.href = INPUT_URL;
       else history.back();
@@ -446,5 +539,3 @@
   </script>
 </body>
 </html>
-
-
