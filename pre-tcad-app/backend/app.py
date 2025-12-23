@@ -373,7 +373,7 @@ def screen_alignn(req: AlignnReq):
     vdd  = float(cond.get("vdd", 0.9))
 
     # 5) 스크리너 실행
-    result = screen_mosfet(props, temp=temp, vdd=vdd)
+    result = screen_mosfet(props, vdd=vdd)
 
     print("PERCENTILES:", result.get("percentiles"))
     print("BASELINE_PERCENTILES:", result.get("baseline_percentiles"))
@@ -395,3 +395,4 @@ def screen_alignn(req: AlignnReq):
 )
 
     return result
+
