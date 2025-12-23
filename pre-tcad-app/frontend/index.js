@@ -2,7 +2,7 @@
 //  공통 유틸
 // =========================
 const $ = id => document.getElementById(id);
-const API = "http://127.0.0.1:7860";   // FastAPI 서버 주소
+const API = "https://pre-tcad-app.onrender.com";   // FastAPI 서버 주소
 
 function toNum(id) {
     const el = document.getElementById(id);
@@ -177,3 +177,4 @@ $("run").onclick = async () => {
         alert("서버 오류: " + e.message);
     }
 };
+
