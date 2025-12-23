@@ -9,5 +9,6 @@ ipywidgets
 torch
 jinja2
 ase
+alignn
 
 
