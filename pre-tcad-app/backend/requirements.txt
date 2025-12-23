@@ -6,8 +6,9 @@ numpy
 pandas
 matplotlib
 ipywidgets
-torch
+torch==2.2.1
 jinja2
 ase
-alignn @ git+https://github.com/usnistgov/alignn.git
+alignn==2025.4.1
+
 
