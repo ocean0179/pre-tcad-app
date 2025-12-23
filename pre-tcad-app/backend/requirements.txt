@@ -6,6 +6,7 @@ numpy
 pandas
 matplotlib
 ipywidgets
-torch == 2.2.2
+torch
 jinja2
+
 
